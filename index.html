@@ -2,21 +2,29 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>جزيئات اليد</title>
 <style>
   html, body { margin: 0; height: 100%; background: #000; overflow: hidden;
     font-family: system-ui, "Segoe UI", Tahoma, sans-serif; color: #fff; }
-  #scene { position: fixed; inset: 0; }
+  #scene, #cursors { position: fixed; inset: 0; }
+  #cursors { pointer-events: none; width: 100%; height: 100%; }
   /* معاينة الكاميرا الصغيرة في الزاوية */
-  #preview { position: fixed; left: 16px; bottom: 16px; width: 220px; aspect-ratio: 4/3;
-    border-radius: 12px; overflow: hidden; border: 1px solid #ffffff33; opacity: .85; }
+  #preview { position: fixed; left: 12px; bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+    width: min(200px, 34vw); aspect-ratio: 4/3; border-radius: 12px; overflow: hidden;
+    border: 1px solid #ffffff33; opacity: .8; }
   #preview video, #preview canvas { position: absolute; inset: 0; width: 100%; height: 100%;
     object-fit: cover; transform: scaleX(-1); }
-  #hud { position: fixed; top: 16px; right: 16px; background: #0008; padding: 10px 14px;
-    border-radius: 10px; font-size: 14px; line-height: 1.7; backdrop-filter: blur(6px); }
-  #hud b { color: #7fd6ff; }
-  #start { position: fixed; inset: 0; display: grid; place-items: center; background: #000c; }
+  #hud { position: fixed; top: calc(12px + env(safe-area-inset-top, 0px)); right: 12px; left: 12px;
+    display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; pointer-events: none; }
+  #shapeName { font-size: clamp(22px, 6vw, 34px); font-weight: 700; color: #7fd6ff;
+    text-shadow: 0 0 18px currentColor; }
+  #handState { font-size: 14px; color: #bbb; margin-top: 2px; }
+  #help { background: #0009; padding: 8px 12px; border-radius: 10px; font-size: 13px; line-height: 1.75;
+    backdrop-filter: blur(6px); pointer-events: auto; max-width: 250px; }
+  #help summary { cursor: pointer; color: #7fd6ff; }
+  #help b { color: #fff; }
+  #start { position: fixed; inset: 0; display: grid; place-items: center; background: #000c; padding: 16px; }
   #start button { font: inherit; font-size: 20px; padding: 14px 32px; border-radius: 999px;
     border: 0; background: #7fd6ff; color: #000; cursor: pointer; }
   #status { margin-top: 12px; text-align: center; color: #aaa; }
@@ -24,6 +32,7 @@
 </head>
 <body>
 <div id="scene"></div>
+<canvas id="cursors"></canvas>
 
 <div id="preview">
   <video id="video" autoplay playsinline muted></video>
@@ -31,12 +40,18 @@
 </div>
 
 <div id="hud">
-  الشكل: <b id="shapeName">كرة</b><br>
-  اليد: <b id="handState">—</b><br>
-  ✋ افتح يدك = تتوسع · ✊ اقبض = تنضم<br>
-  👌 اقرص (إبهام + سبابة) = شكل جديد<br>
-  ☝️ حرّك إصبعك = تدفع الجزيئات<br>
-  ⌨️ المسافة / الأسهم = تغيير الشكل
+  <div>
+    <div id="shapeName">كرة</div>
+    <div id="handState">ما فيه يد</div>
+  </div>
+  <details id="help" open>
+    <summary>التحكم</summary>
+    ✋ <b>كف مفتوح</b> = تحرك الشكل<br>
+    ✊ <b>قبضة</b> = تمسكه وتلفّه<br>
+    👌 <b>قرصة</b> = الشكل التالي<br>
+    ✌️ <b>علامة النصر</b> = الشكل السابق<br>
+    🙌 <b>يدين</b>: بعّدهم = يكبر، قرّبهم = يصغر، ميّلهم = يدور
+  </details>
 </div>
 
 <div id="start">
@@ -51,7 +66,7 @@ import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
 import { FilesetResolver, HandLandmarker } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
 
 // ===================== 1) مشهد Three.js =====================
-const COUNT = 9000;                       // عدد الجزيئات
+const COUNT = 9000;
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 500);
 camera.position.z = 60;
@@ -60,7 +75,6 @@ renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setSize(innerWidth, innerHeight);
 document.getElementById("scene").appendChild(renderer.domElement);
 
-// صورة دائرية ناعمة لكل جزيء (بدل المربع)
 function dotTexture() {
   const c = document.createElement("canvas"); c.width = c.height = 64;
   const g = c.getContext("2d");
@@ -72,8 +86,8 @@ function dotTexture() {
   return new THREE.CanvasTexture(c);
 }
 
-const positions = new Float32Array(COUNT * 3);   // المكان الحالي
-const velocities = new Float32Array(COUNT * 3);  // السرعة
+const positions = new Float32Array(COUNT * 3);
+const velocities = new Float32Array(COUNT * 3);
 const colors = new Float32Array(COUNT * 3);
 const geometry = new THREE.BufferGeometry();
 geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
@@ -208,6 +222,16 @@ function setShape(idx) {
 for (let i = 0; i < COUNT * 3; i++) positions[i] = rnd(-60, 60);
 setShape(0);
 
+// لون العنوان يتبع لون الشكل
+const _setShape = setShape;
+function showShape() {
+  const s = SHAPES[shapeIndex];
+  document.getElementById("shapeName").textContent = `${s.name} (${shapeIndex + 1}/${SHAPES.length})`;
+  document.getElementById("shapeName").style.color = new THREE.Color().setHSL(s.hue, 0.85, 0.68).getStyle();
+}
+function changeShape(i) { _setShape((i + SHAPES.length) % SHAPES.length); showShape(); }
+showShape();
+
 // ===================== 3) تتبع اليد (MediaPipe) =====================
 const video = document.getElementById("video");
 const overlay = document.getElementById("overlay");
@@ -226,7 +250,7 @@ async function start() {
         modelAssetPath: "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
         delegate,
       },
-      runningMode: "VIDEO", numHands: 1,
+      runningMode: "VIDEO", numHands: 2,          // يدين
     });
     try { landmarker = await HandLandmarker.createFromOptions(files, opts("GPU")); }
     catch { landmarker = await HandLandmarker.createFromOptions(files, opts("CPU")); }
@@ -237,6 +261,8 @@ async function start() {
     await video.play();
     overlay.width = video.videoWidth; overlay.height = video.videoHeight;
     document.getElementById("start").remove();
+    // نسكّر الشرح بعد شوي عشان ما يغطي الشكل في الجوال
+    setTimeout(() => { if (innerWidth < 700) document.getElementById("help").open = false; }, 6000);
   } catch (err) {
     console.error(err);
     status.textContent = "صار خطأ: " + err.message;
@@ -244,131 +270,213 @@ async function start() {
 }
 document.getElementById("startBtn").onclick = start;
 
-// خطوط هيكل اليد (أي نقطة توصل بأي نقطة) للرسم في المعاينة
 const BONES = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],
   [9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
 
-function drawHand(lm) {
+function drawHands(hands) {
   octx.clearRect(0, 0, overlay.width, overlay.height);
-  if (!lm) return;
   const W = overlay.width, H = overlay.height;
-  octx.strokeStyle = "#7fd6ff"; octx.lineWidth = 3;
-  for (const [a, b] of BONES) {
-    octx.beginPath();
-    octx.moveTo(lm[a].x * W, lm[a].y * H); octx.lineTo(lm[b].x * W, lm[b].y * H);
-    octx.stroke();
+  for (const lm of hands) {
+    octx.strokeStyle = "#7fd6ff"; octx.lineWidth = 3;
+    for (const [a, b] of BONES) {
+      octx.beginPath();
+      octx.moveTo(lm[a].x * W, lm[a].y * H); octx.lineTo(lm[b].x * W, lm[b].y * H);
+      octx.stroke();
+    }
+    octx.fillStyle = "#fff";
+    for (const p of lm) { octx.beginPath(); octx.arc(p.x * W, p.y * H, 4, 0, 7); octx.fill(); }
   }
-  octx.fillStyle = "#fff";
-  for (const p of lm) { octx.beginPath(); octx.arc(p.x * W, p.y * H, 4, 0, 7); octx.fill(); }
 }
 
 // ===================== 4) قراءة الإيماءات =====================
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
 
-// يحوّل نقطة من الكاميرا (0..1) إلى مكان في المشهد ثلاثي الأبعاد
-function toWorld(p) {
-  const halfH = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * camera.position.z;
-  const halfW = halfH * camera.aspect;
-  return new THREE.Vector3((0.5 - p.x) * 2 * halfW, (0.5 - p.y) * 2 * halfH, 0); // (0.5 - x) = مرآة
+// الإصبع ممدود لو طرفه أبعد عن الرسغ من المفصل اللي تحته
+const FINGERS = [[8, 6], [12, 10], [16, 14], [20, 18]];   // سبابة، وسطى، بنصر، خنصر
+function classify(lm) {
+  const palm = dist(lm[0], lm[9]);
+  if (dist(lm[4], lm[8]) / palm < 0.28) return "pinch";
+  const up = FINGERS.map(([tip, pip]) => dist(lm[tip], lm[0]) > dist(lm[pip], lm[0]) * 1.12);
+  const n = up.filter(Boolean).length;
+  if (n === 0) return "fist";
+  if (up[0] && up[1] && !up[2] && !up[3]) return "peace";
+  if (n >= 3) return "open";
+  return "other";
 }
 
-const hand = {
-  present: false,
-  center: new THREE.Vector3(),   // مركز الشكل يتبع كف اليد
-  finger: new THREE.Vector3(),   // طرف السبابة
-  spread: 1,                     // 0.4 مقبوضة ... 1.7 مفتوحة
-  pinching: false,
+// كل يد لها حالة خاصة: الإيماءة لازم تثبت كم إطار عشان ما ترجف
+function makeHand() {
+  return { seen: false, x: 0.5, y: 0.5, raw: "none", count: 0, gesture: "none" };
+}
+const H = [makeHand(), makeHand()];
+const STABLE = 4;   // كم إطار لازم تثبت الإيماءة
+
+function updateHands(list) {
+  // نرتب اليدين من اليسار لليمين عشان كل يد تبقى في نفس الخانة
+  const sorted = [...list].sort((a, b) => b[9].x - a[9].x);
+  for (let i = 0; i < 2; i++) {
+    const h = H[i], lm = sorted[i];
+    if (!lm) { h.seen = false; h.gesture = "none"; h.count = 0; continue; }
+    const px = 1 - lm[9].x, py = lm[9].y;              // مرآة: يمينك = يمين الشاشة
+    if (!h.seen) { h.x = px; h.y = py; }
+    h.x += (px - h.x) * 0.5; h.y += (py - h.y) * 0.5;  // تنعيم الرجفة
+    h.seen = true;
+    const g = classify(lm);
+    if (g === h.raw) h.count++; else { h.raw = g; h.count = 1; }
+    if (h.count >= STABLE) h.gesture = g;
+  }
+}
+
+// ===================== 5) التحكم =====================
+// الحالة اللي يتحكم فيها المستخدم
+const ctl = {
+  pos: new THREE.Vector3(), targetPos: new THREE.Vector3(),
+  rotX: 0, rotY: 0, rotZ: 0,
+  velX: 0, velY: 0,                 // استمرار اللفة بعد ما تفلت
+  size: 1, targetSize: 1,
 };
+let grab = null, two = null, lastSwitch = 0, prevGesture = ["none", "none"];
 
-function readGestures(lm) {
-  if (!lm) { hand.present = false; return; }
-  hand.present = true;
-  const palm = dist(lm[0], lm[9]);                       // حجم الكف (من الرسغ لأصل الوسطى)
-  const tips = [8, 12, 16, 20].map(i => dist(lm[i], lm[0]) / palm);
-  const openness = tips.reduce((a, b) => a + b) / 4;      // ~1 مقبوضة، ~2 مفتوحة
-  const pinch = dist(lm[4], lm[8]) / palm;                // قرب الإبهام من السبابة
+function worldHalf() {
+  const halfH = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * camera.position.z;
+  return { halfW: halfH * camera.aspect, halfH };
+}
+// حجم يدخل الشاشة: الأشكال عرضها ~40 وحدة، نصغّرها في الشاشات الطولية
+function fitScale() { return Math.min(1, (worldHalf().halfW * 0.85) / 20); }
 
-  hand.spread = THREE.MathUtils.clamp(THREE.MathUtils.mapLinear(openness, 1.0, 1.9, 0.35, 1.7), 0.35, 1.7);
-  hand.center.lerp(toWorld(lm[9]), 0.25);
-  hand.finger.copy(toWorld(lm[8]));
+const LABEL = { open: "✋ تحريك", fist: "✊ ماسك", pinch: "👌 قرصة", peace: "✌️ نصر", other: "…", none: "" };
 
-  const nowPinching = pinch < 0.3;
-  if (nowPinching && !hand.pinching) setShape(shapeIndex + 1);   // قرصة جديدة = الشكل التالي
-  hand.pinching = nowPinching;
+function applyControls(now) {
+  const a = H[0], b = H[1];
+  const { halfW, halfH } = worldHalf();
+  const toWorld = (h) => new THREE.Vector3((h.x - 0.5) * 2 * halfW, (0.5 - h.y) * 2 * halfH, 0);
+  let state;
 
-  document.getElementById("handState").textContent =
-    nowPinching ? "قرصة 👌" : openness > 1.6 ? "مفتوحة ✋" : openness < 1.2 ? "مقبوضة ✊" : "نص نص";
+  if (a.seen && b.seen) {
+    // ---- يدين: المسافة = الحجم، الميلان = الدوران، النص = المكان ----
+    grab = null;
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const d = Math.hypot(dx * camera.aspect, dy), ang = Math.atan2(dy, dx * camera.aspect);
+    if (!two) two = { d, ang, size: ctl.targetSize, rotZ: ctl.rotZ };
+    ctl.targetSize = THREE.MathUtils.clamp(two.size * d / two.d, 0.3, 2.5);
+    ctl.rotZ = two.rotZ - (ang - two.ang);
+    ctl.targetPos.copy(toWorld(a).add(toWorld(b)).multiplyScalar(0.5));
+    ctl.velX = ctl.velY = 0;
+    state = "🙌 يدين: حجم " + ctl.targetSize.toFixed(1) + "×";
+  } else {
+    two = null;
+    const h = a.seen ? a : b.seen ? b : null;
+    const idx = a.seen ? 0 : 1;
+    if (!h) {
+      grab = null;
+      state = "ما فيه يد";
+    } else {
+      const g = h.gesture;
+      if (g === "fist") {
+        // ---- قبضة: الشكل يثبت مكانه وتلفّه بحركة يدك ----
+        if (!grab) grab = { x: h.x, y: h.y, rx: ctl.rotX, ry: ctl.rotY };
+        const ry = grab.ry + (h.x - grab.x) * 7, rx = grab.rx + (h.y - grab.y) * 7;
+        ctl.velY = ry - ctl.rotY; ctl.velX = rx - ctl.rotX;
+        ctl.rotY = ry; ctl.rotX = rx;
+      } else {
+        grab = null;
+        if (g === "open") ctl.targetPos.copy(toWorld(h));       // كف مفتوح: الشكل يلحق يدك
+      }
+      // قرصة أو نصر: نغيّر الشكل مرة وحدة لكل حركة
+      const fresh = g !== prevGesture[idx] && now - lastSwitch > 700;
+      if (fresh && g === "pinch") { changeShape(shapeIndex + 1); lastSwitch = now; }
+      if (fresh && g === "peace") { changeShape(shapeIndex - 1); lastSwitch = now; }
+      state = LABEL[g] || "";
+    }
+  }
+  prevGesture = [a.gesture, b.gesture];
+  document.getElementById("handState").textContent = state;
 }
 
-// ===================== 5) الحركة (كل إطار) =====================
-let rotY = 0, spread = 1;
+// دوائر صغيرة على الشاشة تبيّن وين يدك (بدون ما تخرب الشكل)
+const cursors = document.getElementById("cursors");
+const cctx = cursors.getContext("2d");
+function drawCursors() {
+  const W = cursors.width = innerWidth, Hh = cursors.height = innerHeight;
+  cctx.clearRect(0, 0, W, Hh);
+  for (const h of H) {
+    if (!h.seen) continue;
+    const x = h.x * W, y = h.y * Hh, grabbing = h.gesture === "fist";
+    cctx.beginPath(); cctx.arc(x, y, grabbing ? 14 : 22, 0, Math.PI * 2);
+    cctx.strokeStyle = grabbing ? "rgba(255,210,120,.9)" : "rgba(127,214,255,.7)";
+    cctx.lineWidth = 2; cctx.stroke();
+    cctx.font = "18px system-ui"; cctx.textAlign = "center"; cctx.textBaseline = "middle";
+    cctx.fillText({ open: "✋", fist: "✊", pinch: "👌", peace: "✌️" }[h.gesture] || "", x, y);
+  }
+}
+
+// ===================== 6) الحركة (كل إطار) =====================
+const rot = new THREE.Matrix4(), e = rot.elements, euler = new THREE.Euler();
 const center = new THREE.Vector3();
+let size = 1;
 
 function animate() {
   requestAnimationFrame(animate);
+  const now = performance.now();
 
-  // نشغل تتبع اليد فقط لما تجي لقطة جديدة من الكاميرا
   if (landmarker && video.readyState >= 2 && video.currentTime !== lastVideoTime) {
     lastVideoTime = video.currentTime;
-    const res = landmarker.detectForVideo(video, performance.now());
-    const lm = res.landmarks[0];
-    readGestures(lm);
-    drawHand(lm);
+    const res = landmarker.detectForVideo(video, now);
+    updateHands(res.landmarks);
+    drawHands(res.landmarks);
+    applyControls(now);
+    drawCursors();
   }
 
-  // لو ما فيه يد، يرجع الشكل للنص وبحجمه العادي
-  if (!hand.present) { hand.center.lerp(new THREE.Vector3(), 0.03); hand.spread = 1; }
-  center.lerp(hand.center, 0.15);
-  spread += (hand.spread - spread) * 0.1;
-  // الأشكال المسطحة (نص، فراشة...) تتمايل بس عشان ما تختفي من الجنب، الباقي يدور ببطء
-  if (SHAPES[shapeIndex].still) {
-    const sway = Math.round(rotY / (Math.PI * 2)) * Math.PI * 2 + Math.sin(performance.now() / 1200) * 0.45;
-    rotY += (sway - rotY) * 0.05;
+  const anyHand = H[0].seen || H[1].seen;
+  if (!anyHand) ctl.targetPos.lerp(new THREE.Vector3(), 0.02);
+  if (!grab) {
+    // بعد ما تفلت القبضة يكمّل يلف شوي ويهدأ، وبدون يد يلف لحاله ببطء
+    ctl.rotY += ctl.velY; ctl.rotX += ctl.velX;
+    ctl.velY *= 0.93; ctl.velX *= 0.93;
+    if (!anyHand) ctl.rotY += SHAPES[shapeIndex].still ? 0 : 0.003;
   }
-  else rotY += 0.004;
-  const cos = Math.cos(rotY), sin = Math.sin(rotY);
+  if (SHAPES[shapeIndex].still && !grab && !two) {
+    // الأشكال المسطحة ترجع تواجهك عشان تبان واضحة
+    const snap = (v) => Math.round(v / (Math.PI * 2)) * Math.PI * 2;
+    ctl.rotY += (snap(ctl.rotY) - ctl.rotY) * 0.04;
+    ctl.rotX += (snap(ctl.rotX) - ctl.rotX) * 0.04;
+  }
+
+  center.lerp(ctl.targetPos, 0.12);
+  size += (ctl.targetSize * fitScale() - size) * 0.12;
+  euler.set(ctl.rotX, ctl.rotY, ctl.rotZ, "ZXY");
+  rot.makeRotationFromEuler(euler);
 
   for (let i = 0; i < COUNT; i++) {
     const k = i * 3;
-    // الهدف = نقطة الشكل بعد الدوران والتكبير والتحريك لمكان اليد
     const tx = targets[k], ty = targets[k + 1], tz = targets[k + 2];
-    const gx = (tx * cos - tz * sin) * spread + center.x;
-    const gy = ty * spread + center.y;
-    const gz = (tx * sin + tz * cos) * spread;
+    // الهدف = نقطة الشكل بعد الدوران والحجم والمكان
+    const gx = (e[0] * tx + e[4] * ty + e[8] * tz) * size + center.x;
+    const gy = (e[1] * tx + e[5] * ty + e[9] * tz) * size + center.y;
+    const gz = (e[2] * tx + e[6] * ty + e[10] * tz) * size;
 
-    // قوة نابض تسحب الجزيء لهدفه
-    velocities[k]     += (gx - positions[k])     * 0.015;
-    velocities[k + 1] += (gy - positions[k + 1]) * 0.015;
-    velocities[k + 2] += (gz - positions[k + 2]) * 0.015;
-
-    // طرف السبابة يدفع الجزيئات القريبة بعيد
-    if (hand.present) {
-      const dx = positions[k] - hand.finger.x, dy = positions[k + 1] - hand.finger.y;
-      const d2 = dx * dx + dy * dy;
-      if (d2 < 36 && d2 > 0.01) {
-        const d = Math.sqrt(d2), f = (1 - d / 6) * 1.2;
-        velocities[k] += (dx / d) * f; velocities[k + 1] += (dy / d) * f;
-        velocities[k + 2] += rnd(-0.5, 0.5);
-      }
-    }
-
-    // احتكاك ثم تحريك
-    velocities[k] *= 0.88; velocities[k + 1] *= 0.88; velocities[k + 2] *= 0.88;
+    velocities[k]     += (gx - positions[k])     * 0.03;
+    velocities[k + 1] += (gy - positions[k + 1]) * 0.03;
+    velocities[k + 2] += (gz - positions[k + 2]) * 0.03;
+    velocities[k] *= 0.82; velocities[k + 1] *= 0.82; velocities[k + 2] *= 0.82;
     positions[k] += velocities[k]; positions[k + 1] += velocities[k + 1]; positions[k + 2] += velocities[k + 2];
   }
   geometry.attributes.position.needsUpdate = true;
   renderer.render(scene, camera);
 }
 animate();
+// للتجربة من الكونسول: نقدر نرسل يد وهمية
+window.__debug = { updateHands, applyControls, drawCursors, H, ctl };
 
 addEventListener("resize", () => {
   camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
 });
 // للتجربة بدون كاميرا: المسافة أو الأسهم تغيّر الشكل
-addEventListener("keydown", e => {
-  if (e.code === "Space" || e.code === "ArrowLeft") setShape(shapeIndex + 1);
-  if (e.code === "ArrowRight") setShape(shapeIndex - 1 + SHAPES.length);
+addEventListener("keydown", (ev) => {
+  if (ev.code === "Space" || ev.code === "ArrowLeft") changeShape(shapeIndex + 1);
+  if (ev.code === "ArrowRight") changeShape(shapeIndex - 1);
 });
 </script>
 </body>
