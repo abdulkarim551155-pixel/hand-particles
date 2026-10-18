@@ -1,0 +1,374 @@
+<title>جزيئات تحت إصبعك</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Reem+Kufi:wght@500;700&family=IBM+Plex+Sans+Arabic:wght@400;500&display=swap">
+<style>
+  /* Layout: full-bleed particle canvas; floating shape name top, hints beside it, shape chips along the bottom edge */
+  :root {
+    --void: #05060a;          /* deep space behind the particles */
+    --ink: #eef3ff;
+    --ink-dim: #9aa6c4;
+    --glass: rgba(14, 18, 30, .62);
+    --line: rgba(160, 190, 255, .16);
+    --glow: #7fd6ff;          /* accent, recoloured per shape from JS */
+    --display: "Reem Kufi", "IBM Plex Sans Arabic", Tahoma, sans-serif;
+    --body: "IBM Plex Sans Arabic", Tahoma, "Segoe UI", sans-serif;
+    color-scheme: dark;
+  }
+  html, body { height: 100%; }
+  body { background: var(--void); color: var(--ink); font-family: var(--body);
+    overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; }
+  #scene { position: fixed; inset: 0; }
+  #scene canvas { display: block; cursor: crosshair; }
+
+  .top { position: fixed; top: 0; left: 0; right: 0; pointer-events: none;
+    display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; align-items: flex-start;
+    padding-top: calc(14px + env(safe-area-inset-top, 0px));
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  #shapeName { font-family: var(--display); font-weight: 700; font-size: clamp(28px, 6vw, 44px);
+    margin: 0; line-height: 1.1; color: var(--glow); text-shadow: 0 0 24px var(--glow);
+    transition: color .4s, text-shadow .4s; }
+  .count { font-size: 13px; color: var(--ink-dim); font-variant-numeric: tabular-nums; margin-top: 4px; }
+  .hints { background: var(--glass); border: 1px solid var(--line); border-radius: 12px;
+    padding: 10px 14px; font-size: 13px; line-height: 1.85; color: var(--ink-dim);
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); max-width: 260px; }
+  .hints b { color: var(--ink); font-weight: 500; }
+  @media (max-width: 520px) { .hints { font-size: 12px; padding: 8px 12px; } }
+
+  .chips { position: fixed; left: 0; right: 0; bottom: 0;
+    padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  .chips-row { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; padding-block: 4px; }
+  .chips-row::-webkit-scrollbar { display: none; }
+  .chips button { flex: none; font: 500 14px var(--body); color: var(--ink-dim);
+    background: var(--glass); border: 1px solid var(--line); border-radius: 999px;
+    padding: 8px 16px; cursor: pointer; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    transition: color .2s, border-color .2s; }
+  .chips button:hover { color: var(--ink); }
+  .chips button[aria-pressed="true"] { color: var(--void); background: var(--glow); border-color: var(--glow); }
+  .chips button:focus-visible { outline: 2px solid var(--glow); outline-offset: 2px; }
+</style>
+
+<div id="scene" aria-label="جزيئات متحركة تتفاعل مع اللمس والماوس"></div>
+
+<div class="top" dir="rtl">
+  <div>
+    <h1 id="shapeName">كرة</h1>
+    <div class="count" id="count">الشكل 1 من 13</div>
+  </div>
+  <div class="hints" id="hints">
+    <b>حرّك</b> إصبعك أو الماوس = تدفع الجزيئات<br>
+    <b>اضغط مطوّلاً</b> = تنضم · <b>نقرة</b> = الشكل التالي<br>
+    <b>قرصة بإصبعين</b> أو <b>العجلة</b> = تكبير وتصغير
+  </div>
+</div>
+
+<nav class="chips" dir="rtl" aria-label="الأشكال"><div class="chips-row" id="chips"></div></nav>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+// ===================== 1) مشهد Three.js =====================
+const COUNT = 9000;
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 500);
+camera.position.z = 60;
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+document.getElementById("scene").appendChild(renderer.domElement);
+
+function dotTexture() {
+  const c = document.createElement("canvas"); c.width = c.height = 64;
+  const g = c.getContext("2d");
+  const grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  grad.addColorStop(0, "rgba(255,255,255,1)");
+  grad.addColorStop(0.3, "rgba(255,255,255,.6)");
+  grad.addColorStop(1, "rgba(255,255,255,0)");
+  g.fillStyle = grad; g.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
+}
+
+const positions = new Float32Array(COUNT * 3);
+const velocities = new Float32Array(COUNT * 3);
+const colors = new Float32Array(COUNT * 3);
+const geometry = new THREE.BufferGeometry();
+geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+const material = new THREE.PointsMaterial({
+  size: 0.7, map: dotTexture(), vertexColors: true, transparent: true,
+  depthWrite: false, blending: THREE.AdditiveBlending,
+});
+scene.add(new THREE.Points(geometry, material));
+
+// ===================== 2) الأشكال =====================
+// كل شكل = قائمة نقاط هدف، الجزيئات تطير لها
+const rnd = (a, b) => a + Math.random() * (b - a);
+const SHAPES = [
+  { name: "كرة", hue: 0.55, make(i) {
+      const y = 1 - (i / (COUNT - 1)) * 2, r = Math.sqrt(1 - y * y), t = i * 2.39996;
+      return [Math.cos(t) * r * 16, y * 16, Math.sin(t) * r * 16];
+  }},
+  { name: "قلب", hue: 0.95, make() {
+      // نختار نقاط عشوائية ونحتفظ باللي داخل معادلة القلب: (x²+y²-1)³ - x²y³ < 0
+      for (;;) {
+        const x = rnd(-1.2, 1.2), y = rnd(-1.1, 1.3);
+        const a = x * x + y * y - 1;
+        if (a * a * a - x * x * y * y * y < 0) {
+          const depth = Math.sqrt(Math.max(0, -a)) * 4;   // أسمك في النص
+          return [x * 15, y * 15, rnd(-depth, depth)];
+        }
+      }
+  }},
+  { name: "حلقة", hue: 0.8, make() {
+      const u = rnd(0, Math.PI * 2), v = rnd(0, Math.PI * 2), R = 13, r = 4;
+      return [(R + r * Math.cos(v)) * Math.cos(u), r * Math.sin(v), (R + r * Math.cos(v)) * Math.sin(u)];
+  }},
+  { name: "مجرة", hue: 0.12, make(i) {
+      const arm = i % 3, d = Math.pow(Math.random(), 0.6) * 22;
+      const a = arm * (Math.PI * 2 / 3) + d * 0.28 + rnd(-0.3, 0.3);
+      return [Math.cos(a) * d, rnd(-1, 1) * (3 - d * 0.1), Math.sin(a) * d];
+  }},
+  { name: "نجمة", hue: 0.14, still: true, make() {
+      // نجمة خماسية: نصف القطر يتبدل بين رأس (طويل) وزاوية داخلية (قصير)
+      const a = rnd(0, Math.PI * 2), seg = Math.PI / 5;
+      const f = Math.abs(((a % (2 * seg)) - seg) / seg);       // 1 عند الرأس، 0 بين الرأسين
+      const edge = 7 + 11 * f, r = Math.sqrt(Math.random()) * edge;
+      return [Math.sin(a) * r, Math.cos(a) * r, rnd(-2, 2) * (1 - r / 20)];
+  }},
+  { name: "مكعب", hue: 0.33, make() {
+      // نقاط على أوجه المكعب الستة
+      const p = [rnd(-11, 11), rnd(-11, 11), rnd(-11, 11)];
+      p[Math.floor(Math.random() * 3)] = Math.random() < 0.5 ? -11 : 11;
+      return p;
+  }},
+  { name: "DNA", hue: 0.48, make(i) {
+      // حلزونين ملتفين + درجات بينهم
+      const t = rnd(-1, 1), a = t * Math.PI * 4, y = t * 20;
+      if (i % 5 === 0) {                                       // الدرجات
+        const step = Math.round(t * 16) / 16, b = step * Math.PI * 4, s = rnd(-1, 1);
+        return [Math.cos(b) * 7 * s, step * 20, Math.sin(b) * 7 * s];
+      }
+      const side = i % 2 ? 0 : Math.PI;
+      return [Math.cos(a + side) * 7 + rnd(-.4, .4), y, Math.sin(a + side) * 7 + rnd(-.4, .4)];
+  }},
+  { name: "إعصار", hue: 0.6, make() {
+      // قمع يوسع للأعلى، النقاط ملتفة حوله مع شوية فوضى
+      const t = Math.pow(Math.random(), 0.8), a = rnd(0, Math.PI * 2) + t * 10;
+      const r = (1.5 + t * t * 15) * rnd(0.75, 1.1);
+      return [Math.cos(a) * r, t * 34 - 17, Math.sin(a) * r];
+  }},
+  { name: "زحل", hue: 0.08, make(i) {
+      if (i % 3 === 0) {                                       // الكوكب
+        const y = rnd(-1, 1), r = Math.sqrt(1 - y * y), t = rnd(0, Math.PI * 2);
+        return [Math.cos(t) * r * 8, y * 8, Math.sin(t) * r * 8];
+      }
+      const t = rnd(0, Math.PI * 2), r = rnd(11, 20), tilt = 0.4;   // الحلقة مايلة
+      const x = Math.cos(t) * r, z = Math.sin(t) * r;
+      return [x, z * Math.sin(tilt) + rnd(-.3, .3), z * Math.cos(tilt)];
+  }},
+  { name: "فراشة", hue: 0.75, still: true, make() {
+      // منحنى الفراشة المشهور
+      const t = rnd(0, Math.PI * 12), s = Math.sqrt(Math.random());
+      const r = Math.exp(Math.cos(t)) - 2 * Math.cos(4 * t) - Math.sin(t / 12) ** 5;
+      return [Math.sin(t) * r * 4.5 * s, Math.cos(t) * r * 4.5 * s + 2, rnd(-1.5, 1.5)];
+  }},
+  { name: "وردة", hue: 0.9, still: true, make() {
+      // وردة رياضية: r = |cos(4θ)| تعطي 8 بتلات
+      const t = rnd(0, Math.PI * 2), r = Math.abs(Math.cos(4 * t)) * 18 * Math.sqrt(Math.random());
+      return [Math.cos(t) * r, Math.sin(t) * r, (18 - r) * 0.25 * rnd(-1, 1)];
+  }},
+  { name: "موجة", hue: 0.52, make() {
+      const x = rnd(-24, 24), z = rnd(-24, 24), d = Math.hypot(x, z);
+      return [x, Math.sin(d * 0.45) * 4 * Math.exp(-d / 30) - 2, z];
+  }},
+  { name: "نص", hue: 0.1, still: true, make() {
+      const p = textPoints("أهلاً");
+      const [x, y] = p[Math.floor(Math.random() * p.length)];
+      return [x + rnd(-.15, .15), y + rnd(-.15, .15), rnd(-1.5, 1.5)];
+  }},
+];
+
+// يرسم كلمة على كانفس مخفي ويرجع أماكن البكسلات الملونة كنقاط
+const textCache = {};
+function textPoints(word) {
+  if (textCache[word]) return textCache[word];
+  const c = document.createElement("canvas"); c.width = 600; c.height = 200;
+  const g = c.getContext("2d");
+  g.fillStyle = "#fff"; g.font = "bold 140px Tahoma, sans-serif";
+  g.textAlign = "center"; g.textBaseline = "middle"; g.direction = "rtl";
+  g.fillText(word, 300, 100);
+  const data = g.getImageData(0, 0, 600, 200).data, pts = [];
+  for (let y = 0; y < 200; y += 2)
+    for (let x = 0; x < 600; x += 2)
+      if (data[(y * 600 + x) * 4 + 3] > 128) pts.push([(x - 300) / 9, (100 - y) / 9]);
+  return (textCache[word] = pts);
+}
+let shapeIndex = 0;
+let targets = new Float32Array(COUNT * 3);
+
+function setShape(idx) {
+  shapeIndex = idx % SHAPES.length;
+  const s = SHAPES[shapeIndex];
+  const col = new THREE.Color();
+  for (let i = 0; i < COUNT; i++) {
+    const [x, y, z] = s.make(i);
+    targets.set([x, y, z], i * 3);
+    col.setHSL((s.hue + rnd(-0.06, 0.06) + 1) % 1, 0.9, rnd(0.45, 0.7));
+    colors.set([col.r, col.g, col.b], i * 3);
+  }
+  geometry.attributes.color.needsUpdate = true;
+  document.getElementById("shapeName").textContent = `${s.name} (${shapeIndex + 1}/${SHAPES.length})`;
+}
+
+// بداية: الجزيئات مبعثرة عشوائياً
+for (let i = 0; i < COUNT * 3; i++) positions[i] = rnd(-60, 60);
+setShape(0);
+
+// ===================== 3) أزرار الأشكال =====================
+const chips = document.getElementById("chips");
+SHAPES.forEach((s, i) => {
+  const b = document.createElement("button");
+  b.type = "button"; b.id = "shape-" + i; b.textContent = s.name;
+  b.onclick = () => setShape(i);
+  chips.appendChild(b);
+});
+function syncUI() {
+  const s = SHAPES[shapeIndex];
+  document.getElementById("shapeName").textContent = s.name;
+  document.getElementById("count").textContent = `الشكل ${shapeIndex + 1} من ${SHAPES.length}`;
+  const glow = new THREE.Color().setHSL(s.hue, 0.85, 0.68).getStyle();
+  document.documentElement.style.setProperty("--glow", glow);
+  [...chips.children].forEach((b, i) => {
+    b.setAttribute("aria-pressed", i === shapeIndex);
+    if (i === shapeIndex) b.scrollIntoView({ inline: "nearest", block: "nearest" });
+  });
+}
+const _setShape = setShape;
+setShape = (i) => { _setShape(i); syncUI(); };
+syncUI();
+
+// ===================== 4) اللمس والماوس =====================
+function toWorld(cx, cy) {
+  const halfH = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * camera.position.z;
+  const halfW = halfH * camera.aspect;
+  return new THREE.Vector3((cx / innerWidth - 0.5) * 2 * halfW, (0.5 - cy / innerHeight) * 2 * halfH, 0);
+}
+
+const ctl = {
+  active: false,                 // فيه إصبع أو ماوس فوق المشهد
+  finger: new THREE.Vector3(),
+  center: new THREE.Vector3(),
+  holding: false,                // ضغط مطوّل = تنضم
+  zoom: 1,                       // من العجلة أو القرصة
+};
+const pointers = new Map();
+let downAt = 0, downPos = null, holdTimer = 0, pinchStart = 0, zoomStart = 1;
+const canvas = renderer.domElement;
+
+canvas.addEventListener("pointerdown", (e) => {
+  canvas.setPointerCapture(e.pointerId);
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (pointers.size === 2) {                     // بداية قرصة بإصبعين
+    const [a, b] = [...pointers.values()];
+    pinchStart = Math.hypot(a.x - b.x, a.y - b.y); zoomStart = ctl.zoom;
+    clearTimeout(holdTimer); ctl.holding = false; downPos = null;
+    return;
+  }
+  downAt = performance.now(); downPos = { x: e.clientX, y: e.clientY };
+  ctl.active = true; ctl.finger.copy(toWorld(e.clientX, e.clientY));
+  holdTimer = setTimeout(() => { ctl.holding = true; }, 260);
+});
+
+canvas.addEventListener("pointermove", (e) => {
+  if (pointers.has(e.pointerId)) pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (pointers.size === 2) {
+    const [a, b] = [...pointers.values()];
+    ctl.zoom = THREE.MathUtils.clamp(zoomStart * Math.hypot(a.x - b.x, a.y - b.y) / pinchStart, 0.4, 1.8);
+    return;
+  }
+  // الماوس يشتغل حتى بدون ضغط، اللمس بس وقت ما الإصبع على الشاشة
+  if (e.pointerType === "mouse" || pointers.size) {
+    ctl.active = true; ctl.finger.copy(toWorld(e.clientX, e.clientY));
+  }
+  if (downPos && Math.hypot(e.clientX - downPos.x, e.clientY - downPos.y) > 12) clearTimeout(holdTimer);
+});
+
+function release(e) {
+  pointers.delete(e.pointerId);
+  clearTimeout(holdTimer);
+  const quick = performance.now() - downAt < 260;
+  if (downPos && quick && !ctl.holding &&
+      Math.hypot(e.clientX - downPos.x, e.clientY - downPos.y) < 12) setShape(shapeIndex + 1);
+  ctl.holding = false; downPos = null;
+  if (e.pointerType !== "mouse" && pointers.size === 0) ctl.active = false;
+}
+canvas.addEventListener("pointerup", release);
+canvas.addEventListener("pointercancel", release);
+canvas.addEventListener("pointerleave", (e) => { if (e.pointerType === "mouse") ctl.active = false; });
+canvas.addEventListener("wheel", (e) => {
+  e.preventDefault();
+  ctl.zoom = THREE.MathUtils.clamp(ctl.zoom * Math.exp(-e.deltaY * 0.001), 0.4, 1.8);
+}, { passive: false });
+
+addEventListener("keydown", (e) => {
+  if (e.target.closest && e.target.closest("button")) return;
+  if (e.code === "Space" || e.code === "ArrowLeft") { e.preventDefault(); setShape(shapeIndex + 1); }
+  if (e.code === "ArrowRight") setShape(shapeIndex - 1 + SHAPES.length);
+});
+
+// ===================== 5) الحركة =====================
+const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+let rotY = 0, spread = 1;
+const center = new THREE.Vector3(), origin = new THREE.Vector3();
+
+function animate() {
+  requestAnimationFrame(animate);
+
+  // الشكل يميل شوي باتجاه الإصبع، ويرجع للنص لما تشيله
+  ctl.center.lerp(ctl.active ? ctl.finger.clone().multiplyScalar(0.35) : origin, 0.05);
+  center.lerp(ctl.center, 0.15);
+  const want = (ctl.holding ? 0.35 : 1) * ctl.zoom;
+  spread += (want - spread) * 0.1;
+
+  if (SHAPES[shapeIndex].still) {
+    const sway = Math.round(rotY / (Math.PI * 2)) * Math.PI * 2 + Math.sin(performance.now() / 1200) * 0.45;
+    rotY += (sway - rotY) * 0.05;
+  } else if (!reduceMotion) rotY += 0.004;
+  const cos = Math.cos(rotY), sin = Math.sin(rotY);
+
+  for (let i = 0; i < COUNT; i++) {
+    const k = i * 3;
+    const tx = targets[k], ty = targets[k + 1], tz = targets[k + 2];
+    const gx = (tx * cos - tz * sin) * spread + center.x;
+    const gy = ty * spread + center.y;
+    const gz = (tx * sin + tz * cos) * spread;
+
+    velocities[k]     += (gx - positions[k])     * 0.015;
+    velocities[k + 1] += (gy - positions[k + 1]) * 0.015;
+    velocities[k + 2] += (gz - positions[k + 2]) * 0.015;
+
+    if (ctl.active && !ctl.holding) {
+      const dx = positions[k] - ctl.finger.x, dy = positions[k + 1] - ctl.finger.y;
+      const d2 = dx * dx + dy * dy;
+      if (d2 < 49 && d2 > 0.01) {
+        const d = Math.sqrt(d2), f = (1 - d / 7) * 1.2;
+        velocities[k] += (dx / d) * f; velocities[k + 1] += (dy / d) * f;
+        velocities[k + 2] += rnd(-0.5, 0.5);
+      }
+    }
+
+    velocities[k] *= 0.88; velocities[k + 1] *= 0.88; velocities[k + 2] *= 0.88;
+    positions[k] += velocities[k]; positions[k + 1] += velocities[k + 1]; positions[k + 2] += velocities[k + 2];
+  }
+  geometry.attributes.position.needsUpdate = true;
+  renderer.render(scene, camera);
+}
+animate();
+
+addEventListener("resize", () => {
+  camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+</script>
