@@ -87,7 +87,7 @@ import { FilesetResolver, HandLandmarker } from "https://cdn.jsdelivr.net/npm/@m
 // ===================== 1) مشهد Three.js =====================
 const COUNT = 9000;
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 500);
+const camera = new THREE.PerspectiveCamera(60, innerWidth / Math.max(1, innerHeight), 0.1, 500);
 camera.position.z = 60;
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -473,7 +473,7 @@ function worldHalf() {
   return { halfW: halfH * camera.aspect, halfH };
 }
 // حجم يدخل الشاشة: الأشكال عرضها ~40 وحدة، نصغّرها في الشاشات الطولية
-function fitScale() { return Math.min(1, (worldHalf().halfW * 0.85) / 20); }
+function fitScale() { const f = Math.min(1, (worldHalf().halfW * 0.85) / 20); return f > 0 ? f : 1; }
 
 const LABEL = { open: "✋ تلفّ", fist: "✊ تحريك", pinch: "👌 قرصة", peace: "✌️ نصر", other: "…", none: "" };
 
@@ -593,6 +593,7 @@ function animate() {
     velocities[k + 2] += (gz - positions[k + 2]) * 0.03;
     velocities[k] *= 0.82; velocities[k + 1] *= 0.82; velocities[k + 2] *= 0.82;
     positions[k] += velocities[k]; positions[k + 1] += velocities[k + 1]; positions[k + 2] += velocities[k + 2];
+    if (positions[k] !== positions[k]) { positions[k] = positions[k + 1] = positions[k + 2] = 0; velocities[k] = velocities[k + 1] = velocities[k + 2] = 0; }   // NaN = نرجّعه للنص
   }
   geometry.attributes.position.needsUpdate = true;
   renderer.render(scene, camera);
@@ -602,7 +603,7 @@ animate();
 window.__debug = { updateHands, applyControls, drawCursors, H, ctl };
 
 addEventListener("resize", () => {
-  camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+  camera.aspect = innerWidth / Math.max(1, innerHeight); camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
 });
 // للتجربة بدون كاميرا: المسافة أو الأسهم تغيّر الشكل
