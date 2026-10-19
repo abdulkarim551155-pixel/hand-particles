@@ -44,6 +44,12 @@
   .intro p { color: #ccc; line-height: 1.8; margin: 0 0 20px; }
   .intro .alt { margin: 16px 0 0; }
   .intro a { color: #7fd6ff; }
+  .inapp { background: #3a2a00; border: 1px solid #ffb84d; color: #ffd9a0; border-radius: 12px;
+    padding: 12px; margin: 0 0 16px; line-height: 1.7; font-size: 14px; display: grid; gap: 8px; }
+  .inapp[hidden] { display: none; }
+  #start .inapp .btn2 { font: inherit; font-size: 15px; display: block; padding: 10px; border-radius: 999px; border: 0;
+    background: #ffb84d; color: #000; text-decoration: none; cursor: pointer; }
+  #start .inapp .btn2[hidden] { display: none; }
 </style>
 </head>
 <body>
@@ -74,6 +80,11 @@
   <div class="intro">
     <h1>جزيئات اليد ✋✨</h1>
     <p>تحكم بـ 9000 جزيء بحركة يدك قدام الكاميرا. فيها 23 شكل، منها أشكال من <b>البعد الرابع</b> مثل التسراكت وألياف هوبف، وثقب أسود، وجاذب لورنز، وزجاجة كلاين.</p>
+    <div id="inapp" class="inapp" hidden>
+      ⚠️ أنت فاتح الرابط من داخل تطبيق (واتساب أو انستقرام أو غيرها)، وهذا غالباً يمنع الكاميرا.
+      <a id="openChrome" class="btn2" hidden>افتح في Chrome</a>
+      <button id="copyLink" class="btn2" type="button">انسخ الرابط</button>
+    </div>
     <button id="startBtn">ابدأ الكاميرا</button>
     <div id="status">يحتاج إذن الكاميرا · الصورة ما تطلع من جهازك</div>
     <p class="alt"><a href="touch.html">ما عندك كاميرا؟ جرّب نسخة اللمس</a></p>
@@ -370,10 +381,59 @@ const octx = overlay.getContext("2d");
 let landmarker = null;
 let lastVideoTime = -1;
 
+// ---------- مشاكل الكاميرا الشائعة ----------
+// متصفحات التطبيقات (واتساب، انستقرام، تيك توك، سناب...) غالباً تمنع الكاميرا
+const UA = navigator.userAgent;
+const IN_APP = /WhatsApp|Instagram|FBAN|FBAV|FB_IAB|musical_ly|BytedanceWebview|TikTok|Snapchat|Line\/|Twitter|MicroMessenger|; wv\)/i.test(UA);
+const IS_ANDROID = /Android/i.test(UA);
+function showInAppHelp() {
+  const box = document.getElementById("inapp");
+  if (!box) return;
+  box.hidden = false;
+  const chrome = document.getElementById("openChrome");
+  if (IS_ANDROID) {
+    // رابط يفتح نفس الصفحة في Chrome مباشرة
+    chrome.href = "intent://" + location.host + location.pathname + "#Intent;scheme=https;package=com.android.chrome;end";
+    chrome.hidden = false;
+  }
+  document.getElementById("copyLink").onclick = async () => {
+    try { await navigator.clipboard.writeText(location.href); document.getElementById("copyLink").textContent = "تم النسخ ✓ الصقه في Chrome"; }
+    catch { document.getElementById("copyLink").textContent = location.href; }
+  };
+}
+if (IN_APP) showInAppHelp();
+
+function cameraError(err) {
+  const n = err && err.name;
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    showInAppHelp();
+    return "هذا المتصفح ما يسمح بالكاميرا. افتح الرابط في Chrome أو Safari.";
+  }
+  if (n === "NotAllowedError" || n === "SecurityError")
+    return IN_APP ? "متصفح التطبيق منع الكاميرا. افتح الرابط في Chrome 👇"
+      : "رفضت إذن الكاميرا. اضغط على 🔒 جنب الرابط فوق، وخل الكاميرا «سماح»، وحدّث الصفحة.";
+  if (n === "NotFoundError" || n === "OverconstrainedError") return "ما لقينا كاميرا في الجهاز.";
+  if (n === "NotReadableError" || n === "AbortError") return "الكاميرا مستخدمة في تطبيق ثاني. سكّره وجرب مرة ثانية.";
+  return "صار خطأ: " + (err && err.message || err);
+}
+
 async function start() {
   const status = document.getElementById("status");
   try {
-    status.textContent = "جاري تحميل نموذج تتبع اليد...";
+    // نفتح الكاميرا أول، عشان يطلع طلب الإذن على طول
+    status.textContent = "جاري فتح الكاميرا...";
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error("no-media");
+    video.srcObject = await navigator.mediaDevices.getUserMedia({
+      video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: "user" }, audio: false });
+    await video.play();
+    overlay.width = video.videoWidth; overlay.height = video.videoHeight;
+  } catch (err) {
+    console.error(err);
+    status.textContent = cameraError(err);
+    return;
+  }
+  try {
+    status.textContent = "جاري تحميل الذكاء الاصطناعي... (أول مرة تاخذ ثواني)";
     const files = await FilesetResolver.forVisionTasks(
       "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm");
     const opts = (delegate) => ({
@@ -385,18 +445,12 @@ async function start() {
     });
     try { landmarker = await HandLandmarker.createFromOptions(files, opts("GPU")); }
     catch { landmarker = await HandLandmarker.createFromOptions(files, opts("CPU")); }
-
-    status.textContent = "جاري فتح الكاميرا...";
-    video.srcObject = await navigator.mediaDevices.getUserMedia({
-      video: { width: 640, height: 480, facingMode: "user" } });
-    await video.play();
-    overlay.width = video.videoWidth; overlay.height = video.videoHeight;
     document.getElementById("start").remove();
     // نسكّر الشرح بعد شوي عشان ما يغطي الشكل في الجوال
     setTimeout(() => { if (innerWidth < 700) document.getElementById("help").open = false; }, 6000);
   } catch (err) {
     console.error(err);
-    status.textContent = "صار خطأ: " + err.message;
+    status.textContent = "ما قدرنا نحمّل نموذج التتبع. تأكد من الإنترنت وحدّث الصفحة.";
   }
 }
 document.getElementById("startBtn").onclick = start;
