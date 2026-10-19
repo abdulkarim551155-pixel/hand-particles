@@ -46,8 +46,8 @@
   </div>
   <details id="help" open>
     <summary>التحكم</summary>
-    ✋ <b>كف مفتوح</b> = تحرك الشكل<br>
-    ✊ <b>قبضة</b> = تمسكه وتلفّه<br>
+    ✊ <b>قبضة</b> = تحرك الشكل<br>
+    ✋ <b>كف مفتوح</b> = تلفّ الشكل<br>
     👌 <b>قرصة</b> = الشكل التالي<br>
     ✌️ <b>علامة النصر</b> = الشكل السابق<br>
     🙌 <b>يدين</b>: بعّدهم = يكبر، قرّبهم = يصغر، ميّلهم = يدور
@@ -456,7 +456,7 @@ function worldHalf() {
 // حجم يدخل الشاشة: الأشكال عرضها ~40 وحدة، نصغّرها في الشاشات الطولية
 function fitScale() { return Math.min(1, (worldHalf().halfW * 0.85) / 20); }
 
-const LABEL = { open: "✋ تحريك", fist: "✊ ماسك", pinch: "👌 قرصة", peace: "✌️ نصر", other: "…", none: "" };
+const LABEL = { open: "✋ تلفّ", fist: "✊ تحريك", pinch: "👌 قرصة", peace: "✌️ نصر", other: "…", none: "" };
 
 function applyControls(now) {
   const a = H[0], b = H[1];
@@ -484,15 +484,15 @@ function applyControls(now) {
       state = "ما فيه يد";
     } else {
       const g = h.gesture;
-      if (g === "fist") {
-        // ---- قبضة: الشكل يثبت مكانه وتلفّه بحركة يدك ----
+      if (g === "open") {
+        // ---- كف مفتوح: الشكل يثبت مكانه وتلفّه بحركة يدك ----
         if (!grab) grab = { x: h.x, y: h.y, rx: ctl.rotX, ry: ctl.rotY };
         const ry = grab.ry + (h.x - grab.x) * 7, rx = grab.rx + (h.y - grab.y) * 7;
         ctl.velY = ry - ctl.rotY; ctl.velX = rx - ctl.rotX;
         ctl.rotY = ry; ctl.rotX = rx;
       } else {
         grab = null;
-        if (g === "open") ctl.targetPos.copy(toWorld(h));       // كف مفتوح: الشكل يلحق يدك
+        if (g === "fist") ctl.targetPos.copy(toWorld(h));       // قبضة: الشكل يلحق يدك
       }
       // قرصة أو نصر: نغيّر الشكل مرة وحدة لكل حركة
       const fresh = g !== prevGesture[idx] && now - lastSwitch > 700;
@@ -513,7 +513,7 @@ function drawCursors() {
   cctx.clearRect(0, 0, W, Hh);
   for (const h of H) {
     if (!h.seen) continue;
-    const x = h.x * W, y = h.y * Hh, grabbing = h.gesture === "fist";
+    const x = h.x * W, y = h.y * Hh, grabbing = h.gesture === "open";
     cctx.beginPath(); cctx.arc(x, y, grabbing ? 14 : 22, 0, Math.PI * 2);
     cctx.strokeStyle = grabbing ? "rgba(255,210,120,.9)" : "rgba(127,214,255,.7)";
     cctx.lineWidth = 2; cctx.stroke();
@@ -544,7 +544,7 @@ function animate() {
   const anyHand = H[0].seen || H[1].seen;
   if (!anyHand) ctl.targetPos.lerp(new THREE.Vector3(), 0.02);
   if (!grab) {
-    // بعد ما تفلت القبضة يكمّل يلف شوي ويهدأ، وبدون يد يلف لحاله ببطء
+    // بعد ما تقفل كفك يكمّل يلف شوي ويهدأ، وبدون يد يلف لحاله ببطء
     ctl.rotY += ctl.velY; ctl.rotX += ctl.velX;
     ctl.velY *= 0.93; ctl.velX *= 0.93;
     if (!anyHand) ctl.rotY += SHAPES[shapeIndex].still ? 0 : 0.003;
