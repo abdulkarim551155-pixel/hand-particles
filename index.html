@@ -3,7 +3,17 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>جزيئات اليد</title>
+<title>جزيئات اليد | تحكم بالجزيئات بحركة يدك</title>
+<meta name="description" content="تحكم بآلاف الجزيئات بحركة يدك قدام الكاميرا: 23 شكل منها أشكال البعد الرابع، وثقب أسود، وجاذب لورنز. يشتغل في المتصفح على الجوال والكمبيوتر بدون تحميل.">
+<meta name="keywords" content="تتبع اليد, جزيئات, البعد الرابع, تسراكت, ثقب أسود, hand tracking, particles, MediaPipe, Three.js, 4D">
+<link rel="canonical" href="https://abdulkarim551155-pixel.github.io/hand-particles/">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://abdulkarim551155-pixel.github.io/hand-particles/">
+<meta property="og:title" content="جزيئات اليد: تحكم بالجزيئات بحركة يدك">
+<meta property="og:description" content="تحكم بآلاف الجزيئات بحركة يدك قدام الكاميرا: 23 شكل منها أشكال البعد الرابع، وثقب أسود، وجاذب لورنز. يشتغل في المتصفح على الجوال والكمبيوتر بدون تحميل.">
+<meta property="og:locale" content="ar_SA">
+<meta name="twitter:card" content="summary">
+<meta name="theme-color" content="#000000">
 <style>
   html, body { margin: 0; height: 100%; background: #000; overflow: hidden;
     font-family: system-ui, "Segoe UI", Tahoma, sans-serif; color: #fff; }
@@ -27,7 +37,12 @@
   #start { position: fixed; inset: 0; display: grid; place-items: center; background: #000c; padding: 16px; }
   #start button { font: inherit; font-size: 20px; padding: 14px 32px; border-radius: 999px;
     border: 0; background: #7fd6ff; color: #000; cursor: pointer; }
-  #status { margin-top: 12px; text-align: center; color: #aaa; }
+  #status { margin-top: 12px; text-align: center; color: #aaa; font-size: 14px; }
+  .intro { max-width: 440px; text-align: center; }
+  .intro h1 { font-size: 30px; margin: 0 0 10px; }
+  .intro p { color: #ccc; line-height: 1.8; margin: 0 0 20px; }
+  .intro .alt { margin: 16px 0 0; }
+  .intro a { color: #7fd6ff; }
 </style>
 </head>
 <body>
@@ -55,9 +70,12 @@
 </div>
 
 <div id="start">
-  <div>
+  <div class="intro">
+    <h1>جزيئات اليد ✋✨</h1>
+    <p>تحكم بـ 9000 جزيء بحركة يدك قدام الكاميرا. فيها 23 شكل، منها أشكال من <b>البعد الرابع</b> مثل التسراكت وألياف هوبف، وثقب أسود، وجاذب لورنز، وزجاجة كلاين.</p>
     <button id="startBtn">ابدأ الكاميرا</button>
-    <div id="status">يحتاج إذن الكاميرا</div>
+    <div id="status">يحتاج إذن الكاميرا · الصورة ما تطلع من جهازك</div>
+    <p class="alt"><a href="touch.html">ما عندك كاميرا؟ جرّب نسخة اللمس</a></p>
   </div>
 </div>
 
